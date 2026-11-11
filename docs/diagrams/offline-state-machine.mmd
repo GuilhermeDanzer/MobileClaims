@@ -1,0 +1,20 @@
+%% Offline submission state machine — the customer-visible lifecycle
+stateDiagram-v2
+  [*] --> Draft
+  Draft --> Queued: tap Submit
+  Queued --> Submitting: worker send
+  Submitting --> Queued: offline / 5xx / timeout (backoff + jitter)
+  Submitting --> NeedsAttention: permanent 4xx or attempts exhausted
+  Submitting --> Accepted: 200/201 + reference
+  Accepted --> MediaPending: photographs remain
+  MediaPending --> Complete: all confirmed
+  Accepted --> Complete: no photographs
+  NeedsAttention --> Queued: customer corrects
+  Complete --> [*]
+
+  note right of Accepted
+    Only now is the claim
+    "Submitted". Before this it is
+    "Saved on this device" or
+    "Waiting to send".
+  end note

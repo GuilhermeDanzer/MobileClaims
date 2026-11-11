@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "test-db/**/*.ts",
+    "src/db/schema.ts",
+    "src/db/sqlite-adapter.ts",
+    "src/db/types.ts",
+    "src/db/drafts-repo.ts",
+    "src/db/attachments-repo.ts",
+    "src/db/queue-repo.ts",
+    "src/db/claims-cache-repo.ts",
+    "src/features/sync/backoff.ts",
+    "src/features/sync/sync-engine.ts",
+    "src/features/sync/types.ts"
+  ]
+}

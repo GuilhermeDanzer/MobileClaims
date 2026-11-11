@@ -1,0 +1,54 @@
+%% Production target topology — Level C (designed, not deployed).
+%% Keep in sync with ARCHITECTURE.md §8 and SECURITY_AND_RELIABILITY.md.
+flowchart TB
+  subgraph Edge["AWS edge"]
+    CF["CloudFront + WAF<br/>(rate-based + managed rules)"]
+    APIGW["API Gateway HTTP API<br/>JWT authorizer + throttles"]
+  end
+
+  subgraph VPC["AWS VPC (us-east-1, multi-AZ)"]
+    ALB["Application Load Balancer<br/>(public subnets)"]
+    subgraph App["App tier (private subnets, 2 AZs)"]
+      API["ECS Fargate — Claims API"]
+      WRK["ECS Fargate — workers"]
+    end
+    subgraph Data["Data tier (private subnets)"]
+      RP["RDS Proxy"]
+      PG[("RDS PostgreSQL<br/>Multi-AZ")]
+      S3[("S3 documents<br/>SSE-KMS + versioning + CRR")]
+      SQS[["SQS standard + DLQ"]]
+    end
+    VPCe["VPC endpoints<br/>(S3, SQS, KMS)"]
+  end
+
+  subgraph IdP["Identity"]
+    COG["Amazon Cognito<br/>(customers)"]
+    ENTRA["Microsoft Entra ID<br/>(employees)"]
+  end
+
+  subgraph Ops["Security & observability"]
+    KMS["KMS CMKs"]
+    SM["Secrets Manager"]
+    CW["CloudWatch + X-Ray"]
+  end
+
+  subgraph OnPrem["On-premises (VPN / Direct Connect)"]
+    POL["Policy system"]
+    LEG["Legacy claims system"]
+  end
+
+  CF --> APIGW --> ALB --> API
+  API --> RP --> PG
+  API --> S3
+  API -->|"outbox → publish"| SQS
+  SQS --> WRK
+  WRK --> PG
+  WRK -->|"HTTPS over VPN"| LEG
+  API -->|"read-only, cached"| POL
+  COG -->|"customer JWT"| APIGW
+  ENTRA -->|"employee JWT (internal path)"| APIGW
+  KMS -.-> PG
+  KMS -.-> S3
+  SM -.-> API
+  CW -.-> API
+  CW -.-> WRK

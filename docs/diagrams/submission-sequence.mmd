@@ -1,0 +1,42 @@
+%% Claim submission — two-phase, asynchronous processing, and failure handling
+sequenceDiagram
+  autonumber
+  actor U as Customer
+  participant App as Mobile app
+  participant DB as SQLite (device)
+  participant API as Claims API
+  participant PG as Postgres
+  participant S3 as Object storage
+  participant Q as Queue (SQS)
+  participant W as Worker
+  participant DLQ as DLQ
+  participant L as Legacy system
+
+  Note over App,L: one correlationId (W3C traceparent) spans every hop
+
+  U->>App: fill wizard, tap Submit
+  App->>DB: tx: draft + clientClaimId + outbox item
+  App->>API: POST /v1/claims (payload + document manifest)
+  API->>PG: tx: claims + outbox_events + document metadata
+  API-->>App: 201 reference + presigned URLs
+  App-->>U: "Submitted · NW-2026-000123"
+  loop each document
+    App->>S3: PUT object (progress)
+    App->>API: POST /claims/{id}/documents/{docId}/complete
+    API->>S3: HeadObject (size/type validation)
+    API-->>App: 200 uploaded
+  end
+  PG->>Q: publisher moves outbox event
+  Q->>W: message (at-least-once)
+  W->>L: createClaim(reference, idempotency key)
+  alt legacy down
+    W-->>W: breaker opens, retry with backoff
+    Note over W,L: no submission is lost
+  else legacy ok
+    L-->>W: legacy claim number
+    W->>PG: append legacy_accepted to timeline
+    W->>App: notification hint (push / inbox)
+  else legacy rejects permanently
+    Q->>DLQ: after N attempts
+    Note over DLQ: listed for operator redrive; nothing silently lost
+  end

@@ -1,0 +1,20 @@
+%% Local development topology — what actually runs (no AWS credentials)
+flowchart LR
+  subgraph Host["Developer machine"]
+    APP["Expo app<br/>iOS simulator / dev build"]
+    API["Claims API<br/>Fastify :3000"]
+    WRK["Worker<br/>npm run worker"]
+    STUB["On-prem stand-in<br/>Fastify :4000<br/>+ /dev/faults"]
+  end
+
+  subgraph Docker["Docker Compose"]
+    PG[("Postgres 16<br/>:5432")]
+    LS[("LocalStack S3<br/>:4566")]
+  end
+
+  APP -->|"REST + bearer JWT"| API
+  APP -->|"presigned PUT (progress)"| LS
+  API --> PG
+  API -->|"presign / HeadObject"| LS
+  WRK --> PG
+  WRK -->|"HTTPS + idempotency key"| STUB

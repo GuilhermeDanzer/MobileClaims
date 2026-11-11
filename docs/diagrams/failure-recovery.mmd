@@ -1,0 +1,20 @@
+%% Failure recovery & disaster recovery — Level C (designed, not deployed)
+flowchart TB
+  subgraph InRegion["In-region (immediate, automatic)"]
+    direction LR
+    F1["AZ failure"] -->|"ALB shifts to healthy AZ"| OK1["Traffic continues"]
+    F2["RDS primary fails"] -->|"Multi-AZ failover (RDS Proxy reconnects)"| OK2["Standby promoted"]
+    F3["API task dies"] -->|"Fargate replaces; ALB health checks"| OK3["Requests re-routed"]
+    F4["Worker dies"] -->|"SQS visibility timeout → redelivery"| OK4["Re-processed"]
+    F5["Legacy down"] -->|"circuit breaker + DLQ + reconciliation"| OK5["Backlog drains later"]
+  end
+
+  subgraph CrossRegion["Cross-region DR (planned, manual promote)"]
+    direction LR
+    D1["us-east-1 unreachable"] --> D2["Promote us-west-2 read replica"]
+    D2 --> D3["Fence old writers; verify DB and object consistency"]
+    D3 --> D4["Deploy paused compute; reconstruct queue; resolve ambiguous sends"]
+    D4 --> D5["Switch traffic; canary then resume processing"]
+  end
+
+  InRegion -->|"exhausted → declare regional outage"| CrossRegion

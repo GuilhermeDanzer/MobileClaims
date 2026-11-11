@@ -1,0 +1,14 @@
+%% Legacy integration — production path (SQS); local substitute noted in labels
+flowchart LR
+  API["Claims API"] -->|"tx: claim + outbox_events"| OUTBOX[("outbox_events")]
+  OUTBOX -->|"publisher (atomic claim)"| Q[["SQS standard<br/>(local: queue_messages)"]]
+  Q -->|"worker poll"| W["Worker (Fargate)"]
+  W -->|"createClaim(reference, idempotency key)<br/>via VPN / Direct Connect"| LEG["Legacy claims system"]
+  LEG -->|"accepted"| T[("claim_status_events")]
+  LEG -->|"reject / poison"| DLQ[["DLQ<br/>(local: queue_dead_letters)"]]
+  Q -->|"attempts exhausted"| DLQ
+  W -->|"getStatus(reference) poll"| LEG
+  W --> T
+  R["Reconciler"] -->|"detect duplicates / stuck items"| T
+  R -->|"by reference"| LEG
+  BREAK["Circuit breaker"] -.->|"pauses calls while open"| W

@@ -1,0 +1,32 @@
+%% System context — actors, systems, and trust boundaries
+%% Tagged: [A] implemented, [B] locally simulated, [C] designed only
+flowchart LR
+  subgraph Actors
+    C["Customer [A]"]
+    E["Adjuster / employee [B local]"]
+    O["Operations engineer [C]"]
+  end
+
+  subgraph Platform["Mobile Claims Platform"]
+    M["Mobile app [A]"]
+    API["Claims API [A]"]
+    W["Worker [A]"]
+    DB[("Postgres [A]")]
+    S3["Object storage [B local / S3 C]"]
+  end
+
+  subgraph External["External / on-premises"]
+    POL["Policy system [B stub / C real]"]
+    LEG["Legacy claims system [B stub / C real]"]
+  end
+
+  C -->|submit + track| M
+  M -->|HTTPS + JWT| API
+  M -->|presigned PUT| S3
+  API --> DB
+  API --> S3
+  W --> DB
+  W -->|createClaim / getStatus| LEG
+  API -->|read-only snapshot| POL
+  E -.->|internal API, separate audience| API
+  O -.->|dashboards, alarms| Platform

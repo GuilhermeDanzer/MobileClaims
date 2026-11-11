@@ -41,3 +41,7 @@ example
 # generated native folders
 /ios
 /android
+
+# per-workspace native folders (Expo Continuous Native Generation)
+apps/*/ios
+apps/*/android

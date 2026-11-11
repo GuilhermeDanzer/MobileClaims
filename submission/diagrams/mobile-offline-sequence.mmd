@@ -1,0 +1,66 @@
+---
+title: Mobile Offline Submission — Local Evidence and Production Boundaries
+---
+sequenceDiagram
+  autonumber
+  actor U as Customer
+  participant UI as React Native UI
+  participant DB as SQLite + durable files
+  participant S as Foreground sync engine
+  participant A as Claims API
+  participant PG as PostgreSQL
+  participant O as Object storage
+  participant W as Publisher / Queue / Worker
+  participant L as Legacy claims system
+  U->>UI: Start claim and select photos
+  UI->>DB: Persist draft, stable clientClaimId and file records
+  U->>UI: Submit while offline
+  UI->>DB: Transaction: freeze payload and enqueue
+  UI-->>U: Waiting to send — saved on device
+  Note over DB,S: Process may terminate, no guaranteed sync while closed
+  Note over UI,S: Reopen with valid session and reconnect
+  S->>DB: Reset interrupted states, read due work
+  S->>A: POST metadata + manifest + same clientClaimId
+  A->>PG: Transaction: claim, evidence metadata, event and outbox
+  PG-->>A: Commit
+  alt Response arrives
+    A-->>S: 201 + claimId / reference
+  else Accepted response lost
+    Note over S,A: Persisted backoff, replay original clientClaimId
+    S->>A: POST same intake identity
+    A->>PG: Customer-scoped unique identity lookup
+    A-->>S: 200 + same claimId / reference
+  end
+  S->>DB: Persist acknowledgment before document lookup
+  UI-->>U: Submitted + reference, photos pending
+  loop Each incomplete attachment
+    S->>A: Read claim, reconcile document completion
+    alt Server already completed it
+      S->>DB: Persist file completion
+    else File still pending
+      S->>A: Request fresh presigned PUT URL
+      A-->>S: Owned object capability
+      S->>O: PUT entire file with progress
+      S->>A: Confirm document receipt
+      A->>O: HEAD validates size / type
+      A->>PG: Commit completion, release metadata readiness
+      A-->>S: Receipt confirmed
+      S->>DB: Persist file completion
+    end
+  end
+  Note over PG,O: Local: not_scanned. Production: quarantine + clean verdict also required
+  W->>PG: Select eligible retained outbox intent
+  W->>W: Enqueue, mark publication, at-least-once delivery
+  W->>L: Create with stable platform reference
+  L-->>W: Legacy claim number
+  W->>PG: Atomically commit delivery / number / timeline / notification
+  loop Reconciliation while nonterminal
+    W->>L: Poll status using verified lookup contract
+    L-->>W: Last-known adjudication state
+    W->>PG: Fenced lease, append changed status
+  end
+  UI->>A: Foreground / periodic / manual refresh
+  A->>PG: Customer-scoped status timeline
+  A-->>UI: Status projection and timestamps
+  UI-->>U: Updated timeline
+  Note over UI,L: Eventual consistency, production push is a hint, local inbox is a substitute

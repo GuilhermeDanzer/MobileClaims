@@ -1,0 +1,41 @@
+# Local infrastructure for the Mobile Claims Platform.
+# No AWS credentials required.
+#
+#   docker compose -f infra/local/docker-compose.yml up -d
+#
+# Postgres is the system of record. LocalStack (S3-only, community edition) is the local
+# stand-in for S3 — the API uses the real S3 client and presigner against it with
+# path-style addressing (ADR-011).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: claims
+      POSTGRES_PASSWORD: claims
+      POSTGRES_DB: claims
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claims -d claims"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  localstack:
+    image: localstack/localstack:3.8.1   # community edition; `latest` requires a license
+    environment:
+      SERVICES: s3
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      DEBUG: "0"
+    ports:
+      - "4566:4566"   # S3 API (the API targets this)
+    volumes:
+      - localstackdata:/var/lib/localstack
+
+volumes:
+  pgdata:
+  localstackdata:

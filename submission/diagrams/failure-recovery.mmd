@@ -1,0 +1,46 @@
+---
+title: Failure Recovery — Preserve Identity and Separate Acceptance from Processing
+---
+flowchart TB
+  subgraph Phone["Mobile failures • local orchestration tested"]
+    Loss["Connectivity loss / backend temporarily unavailable"]
+    Keep["SQLite retains draft, files, clientClaimId and next retry"]
+    Resume["Foreground / reconnect / scheduler<br/>Replay same ID after backoff"]
+    Lost["API committed but response lost"]
+    Dedupe["Customer + clientClaimId constraint<br/>Return original claim / reference"]
+    Upload["Crash or failure during evidence upload"]
+    Evidence["Retain accepted ID; reconcile completion<br/>Fresh URL; retry incomplete whole files"]
+    Attention["Permanent error / missing file<br/>Preserve work; actionable manual recovery"]
+    Loss --> Keep --> Resume --> Dedupe
+    Lost --> Resume
+    Upload --> Evidence
+    Evidence -->|"permanent failure"| Attention
+  end
+  subgraph Integration["Integration failures • local queue / legacy substitutes"]
+    Down["Legacy outage / timeout"]
+    Buffer["Retain eligible intent<br/>Backoff + breaker; bounded consumers"]
+    Restore["Dependency recovers<br/>Drain backlog; reconcile status"]
+    Crash["Worker crash"]
+    Lease["Visibility expires; redeliver<br/>Skip locally finalized delivery"]
+    Ambiguous["Legacy may have committed<br/>Local acknowledgment absent"]
+    Lookup["Query verified reference / legacy-number contract"]
+    Found["Found: repair delivery state and poll status"]
+    Safe["Confirmed absent + durable dedupe<br/>Replay SAME reference"]
+    Hold["Unknown / no safe dedupe<br/>Quarantine; operator resolution"]
+    Dead["Transient / poison attempts exhausted<br/>DLQ; diagnose before audited redrive"]
+    Down --> Buffer --> Restore
+    Buffer --> Dead
+    Crash --> Lease --> Ambiguous
+    Ambiguous --> Lookup
+    Lookup --> Found
+    Lookup --> Safe
+    Lookup --> Hold
+  end
+  subgraph Region["Regional recovery • production design only"]
+    Disaster["Primary region unavailable"]
+    Fence["Fence writers; promote replica<br/>Measure loss; verify objects / clean verdicts"]
+    Rebuild["Recovery manifest from surviving DB<br/>Rebuild regional queue; resolve ambiguous sends"]
+    Canary["Canary; switch traffic; gradually resume"]
+    Disaster -.-> Fence -.-> Rebuild -.-> Canary
+  end
+  Note["No exactly-once distributed guarantee<br/>Local stub dedupe is memory-only; real contract unverified<br/>No guaranteed terminated-app sync; DR targets are untested"]

@@ -1,0 +1,63 @@
+---
+title: AWS Production Architecture — Proposed, Not Deployed
+---
+flowchart TB
+  Mobile["React Native / Expo customer app<br/>SQLite outbox + saved server reads"]
+  Cognito["Cognito<br/>Customer JWT"]
+  Employee["Employee / adjuster tools<br/>Entra ID + corporate access"]
+  Edge["CloudFront + WAF<br/>Abuse protection; no shared PII cache"]
+  GW["API Gateway HTTP API<br/>JWT + throttles"]
+  Internal["Internal employee API boundary<br/>Separate audience, role / assignment checks"]
+  subgraph Primary["us-east-1 • proposed primary region"]
+    subgraph VPC["Private VPC • application/data tiers across two AZs"]
+      Entry["VPC link + internal ALB<br/>Explicit TLS + healthy target routing"]
+      subgraph A["Availability Zone A"]
+        API["Fargate API tasks<br/>Intake / evidence metadata / status reads"]
+        DB[("RDS PostgreSQL primary<br/>Claims + evidence + transactional outbox")]
+      end
+      subgraph B["Availability Zone B"]
+        ReplicaTasks["Fargate API / worker replicas<br/>Same service responsibilities"]
+        Standby[("RDS Multi-AZ standby")]
+      end
+      Proxy["RDS Proxy<br/>Bounded database connections"]
+      Workers["Fargate workers across AZ A + B<br/>Outbox publisher / delivery / reconciliation<br/>Persist outcomes and timeline in RDS"]
+      Hybrid["VPN / Direct Connect<br/>Controlled cloud-to-enterprise boundary"]
+    end
+    Storage[("Private S3 • regional service<br/>Direct PUT; KMS / versions / quarantine")]
+    Queue[["SQS standard + DLQ • regional service<br/>At-least-once; backoff / reviewed redrive"]]
+    Scan["Malware scan + clean-only access gate<br/>Receipt is not scan clearance"]
+    Ops["Operations • Entra / IAM<br/>CloudWatch + ADOT / X-Ray<br/>KMS + Secrets Manager + audit"]
+  end
+  subgraph Prem["On-premises • existing authoritative systems"]
+    Policies["Policy system<br/>Coverage / eligibility"]
+    Legacy["Claims system<br/>Adjudication; durable reference dedupe required"]
+  end
+  subgraph DR["us-west-2 • proposed pilot-light recovery region"]
+    DRDB[("Asynchronous RDS read replica")]
+    DRS3[("S3 replicated object versions")]
+    Recovery["Fence primary; manually promote; verify evidence<br/>Reconstruct regional queue; resolve ambiguous sends<br/>Canary then switch traffic and resume"]
+  end
+  Cognito -.->|"authenticate"| Mobile
+  Mobile -->|"HTTPS + customer JWT"| Edge
+  Edge --> GW --> Entry
+  Employee --> Internal --> Entry
+  Entry --> API
+  Entry --> ReplicaTasks
+  API --> Proxy --> DB
+  DB ==>|"synchronous Multi-AZ replication"| Standby
+  Mobile -->|"presigned PUT; bytes bypass API"| Storage
+  API -->|"presign / receipt check"| Storage
+  Storage ==>|"object events"| Scan
+  DB ==>|"eligible outbox via publisher"| Queue
+  Queue ==>|"bounded consumers"| Workers
+  Workers -->|"create / status lookup"| Hybrid
+  API -->|"policy integration"| Hybrid
+  Hybrid --> Policies
+  Hybrid --> Legacy
+  Ops -.->|"telemetry / controls"| Workers
+  Ops -.->|"logs / tracing / keys / secrets"| API
+  DB ==>|"async replication; lag can exceed target"| DRDB
+  Storage ==>|"async cross-region replication"| DRS3
+  DRDB -.-> Recovery
+  DRS3 -.-> Recovery
+  Legend["Legend: thin = synchronous request / transfer<br/>thick = asynchronous transport / replication<br/>dotted = identity / operations / recovery administration"]
