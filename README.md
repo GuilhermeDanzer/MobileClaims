@@ -2,8 +2,6 @@
 
 The challenge primarily requests an architecture diagram, written design and presentation video. This repository additionally includes an **optional local proof of concept** to validate selected mobile offline-first, idempotency and failure-recovery behaviors. AWS production infrastructure is documented but has not been deployed.
 
-Start with the [final architecture design](submission/ARCHITECTURE_DESIGN.md). The original challenge PDF is not present; the [coverage map](submission/REQUIREMENTS_COVERAGE.md) uses the supplied checklist. The problem is reliable claim intake during severe-weather spikes, useful mobile status tracking and safe integration with on-premises policy/claims systems.
-
 ![Proposed production architecture — not deployed](submission/diagrams/production-architecture.svg)
 
 [Full-size SVG](submission/diagrams/production-architecture.svg) · [PNG](submission/diagrams/production-architecture.png) · [Mermaid source](submission/diagrams/production-architecture.mmd)
